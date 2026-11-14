@@ -303,6 +303,16 @@ interface AcpTurn {
 /** The parts of a `session/load` request that open this session as it was opened. */
 type AcpSessionRestore = Omit<LoadSessionRequest, "sessionId">;
 
+/** The stdio relay of one MCP server, and the number of open sessions that use it. */
+interface SharedStdioRelay {
+  /** The command, arguments and environment that `relay` runs. */
+  launch: string;
+  relay: Deferred.Deferred<StdioMcpRelay, ProviderClientOperationError>;
+  /** Relays that a session with another launch replaced. The agent can reach them until it reads the new one. */
+  replaced: Deferred.Deferred<StdioMcpRelay, ProviderClientOperationError>[];
+  users: number;
+}
+
 interface AcpThread {
   id: string;
   cwd: string;
@@ -611,6 +621,8 @@ export class AcpAgentClient extends EventEmitter<ClientEvents> {
   /** Whether `#endIfUnresponsive` waits for its probe. */
   #probing = false;
   readonly #bridge = new LocalMcpBridge();
+  /** The stdio relays that the sessions of a directory share, by directory and server name. */
+  readonly #sharedRelays = new Map<string, SharedStdioRelay>();
   /**
    * MCP server failures of sessions that are not in `#threads`. The agent starts the servers when it
    * answers `session/new`, so a server that fails at once can be reported before the session is
@@ -1947,29 +1959,80 @@ export class AcpAgentClient extends EventEmitter<ClientEvents> {
    * its private temporary folder, in the session's folder, as the agent would start it. It runs
    * outside a Workspace only sandbox: the Access setting does not limit MCP servers, as for Claude,
    * Codex and Pi (#6191). `close` ends the relays and their servers.
+   *
+   * An agent that keeps one MCP server of each name for a directory (`mcpServersPerDirectory`) gets
+   * one relay for each server of a directory, which the last of its sessions there ends: a relay of
+   * each session would be replaced by the newest one, and closing that session would leave the others
+   * with a server that is gone. A session with another launch of the server, after a settings change,
+   * replaces the relay there as the agent replaces the server. The replaced relay ends with the last
+   * session too, as the agent can still reach it until it reads the new one.
    */
   readonly #relayStdioMcpServers = Effect.fn("AcpAgentClient.relayStdioMcpServers")(function* (
     this: AcpAgentClient,
     servers: readonly AcpMcpServer[],
     cwd: string,
   ) {
-    const relays: StdioMcpRelay[] = [];
+    const used: Array<{ key: string | null; entry: SharedStdioRelay }> = [];
+    const release = ({ key, entry }: { key: string | null; entry: SharedStdioRelay }) =>
+      Effect.suspend(() => {
+        entry.users -= 1;
+        if (entry.users > 0) return Effect.void;
+        if (key !== null && this.#sharedRelays.get(key) === entry) this.#sharedRelays.delete(key);
+        return Effect.forEach(
+          [entry.relay, ...entry.replaced],
+          (relay) =>
+            Deferred.await(relay).pipe(
+              Effect.flatMap((started) => started.close()),
+              Effect.ignore,
+            ),
+          { discard: true, concurrency: "unbounded" },
+        );
+      });
+    // A second close of the session finds nothing to release, so it cannot end a relay that others use.
     const close = Effect.suspend(() =>
-      Effect.forEach(relays, (relay) => relay.close(), { discard: true, concurrency: "unbounded" }),
-    ).pipe(Effect.ignore);
-    const environment: Record<string, string> = {};
-    for (const [key, value] of Object.entries(process.env)) if (value !== undefined) environment[key] = value;
-    Object.assign(environment, cliPathEnvironment(this.#cli), this.options.env, this.options.extraEnv?.());
+      Effect.forEach(used.splice(0), release, { discard: true, concurrency: "unbounded" }),
+    );
+    const environment = () => {
+      const values: Record<string, string> = {};
+      for (const [key, value] of Object.entries(process.env)) if (value !== undefined) values[key] = value;
+      return Object.assign(values, cliPathEnvironment(this.#cli), this.options.env, this.options.extraEnv?.());
+    };
     const relayed = yield* Effect.forEach(servers, (server) =>
-      Effect.gen(function* () {
+      Effect.gen({ self: this }, function* () {
         if ("type" in server) return server;
-        const relay = yield* startStdioMcpRelay({
-          command: server.command,
-          args: server.args,
-          env: { ...environment, ...Object.fromEntries(server.env.map(({ name, value }) => [name, value])) },
-          cwd,
-        });
-        relays.push(relay);
+        // The agent keys its server by directory and name, so a session with another launch replaces it there.
+        const key = this.#flavor.mcpServersPerDirectory ? JSON.stringify([cwd, server.name]) : null;
+        const launch = JSON.stringify([server.command, server.args, server.env]);
+        const shared = key === null ? undefined : this.#sharedRelays.get(key);
+        const entry: SharedStdioRelay = shared ?? { launch, relay: Deferred.makeUnsafe(), replaced: [], users: 0 };
+        entry.users += 1;
+        used.push({ key, entry });
+        if (key !== null && !shared) this.#sharedRelays.set(key, entry);
+        if (!shared || entry.launch !== launch) {
+          if (shared) {
+            entry.replaced.push(entry.relay);
+            entry.relay = Deferred.makeUnsafe();
+            entry.launch = launch;
+          }
+          const relay = entry.relay;
+          // Uninterruptible, so the sessions that wait for this relay always get it or its failure.
+          yield* Effect.exit(
+            startStdioMcpRelay({
+              command: server.command,
+              args: server.args,
+              env: { ...environment(), ...Object.fromEntries(server.env.map(({ name, value }) => [name, value])) },
+              cwd,
+            }),
+          ).pipe(
+            Effect.flatMap((started) => {
+              // The next session starts the relay again, and the failed one ends with the others.
+              if (Exit.isFailure(started) && entry.relay === relay) entry.launch = "";
+              return Deferred.done(relay, started);
+            }),
+            Effect.uninterruptible,
+          );
+        }
+        const relay = yield* Deferred.await(entry.relay);
         return {
           type: "http" as const,
           name: server.name,
