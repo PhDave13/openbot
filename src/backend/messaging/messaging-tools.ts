@@ -262,6 +262,8 @@ function historyFilter(data: { query?: string | undefined; before?: string | und
 }
 
 interface HistoryMessage {
+  /** The platform's message id, which `messaging_post` takes as `replyTo`. */
+  id: string;
   author: string;
   sentAt: string;
   text: string;
@@ -279,9 +281,15 @@ export function boundedHistory(messages: readonly ContextEntry[]): HistoryMessag
         ? `${message.text.slice(0, HISTORY_MESSAGE_CHARACTERS)}…`
         : message.text;
     const files = (message.files ?? []).map((file) => ({ name: file.name, ...(file.path ? { path: file.path } : {}) }));
-    characters += text.length + message.authorName.length + JSON.stringify(files).length;
+    characters += message.id.length + text.length + message.authorName.length + JSON.stringify(files).length;
     if (characters > HISTORY_CHARACTERS) break;
-    kept.unshift({ author: message.authorName, sentAt: message.sentAt, text, ...(files.length ? { files } : {}) });
+    kept.unshift({
+      id: message.id,
+      author: message.authorName,
+      sentAt: message.sentAt,
+      text,
+      ...(files.length ? { files } : {}),
+    });
   }
   return kept;
 }
