@@ -240,6 +240,24 @@ export class RoutineScheduler implements RoutineDueSource {
     return this.#routines.runForDelivery(deliveryId);
   }
 
+  /**
+   * The zone whose clock a routine delivery's run time is given in: its routine's. A flow handoff has
+   * no run of its own, and another agent owns its routine, so the routine is found by its ID. Without
+   * it, the agent reads only the UTC time and takes the wrong date for a run near midnight (#9276).
+   */
+  timezoneForDelivery(deliveryId: string): string {
+    const run = this.#routines.runForDelivery(deliveryId);
+    if (run) return this.#routines.getRecord(run.agentId, run.routineId)?.timezone || this.#timezone();
+    const sender = this.#mailbox.getDelivery(deliveryId)?.delivery.sender;
+    if (sender?.kind === "routine") {
+      for (const agent of this.#hooks.listAgents()) {
+        const routine = this.#routines.getRecord(agent.id, sender.routineId);
+        if (routine) return routine.timezone || this.#timezone();
+      }
+    }
+    return this.#timezone();
+  }
+
   /** The open waits that the run of this delivery continues. */
   wokenWaits(deliveryId: string): AgentWait[] {
     return this.#waits.wokenBy(deliveryId);
