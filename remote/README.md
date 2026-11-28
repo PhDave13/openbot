@@ -247,6 +247,7 @@ These settings are optional:
 | `REMOTE_DRAIN_SECONDS` | 90 | Time in which the old process closes its sockets in waves |
 | `REMOTE_STATE_DIR` | none | Directory of the sealed state snapshot. Without it, no snapshot is written. |
 | `REMOTE_STATE_SNAPSHOT_SECONDS` | 30 | Time between two snapshot writes |
+| `REMOTE_HOST_HOME_CHECK_SECONDS` | 300 | Time between two checks that close host sockets whose stored Signal home is another home |
 
 ## Two Signal machines
 

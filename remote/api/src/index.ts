@@ -47,6 +47,10 @@ const RESUME_BATCH_WAIT = "25 millis";
 const RESUME_BATCH_CONCURRENCY = 128;
 const RESUME_BATCH_RETRY_AFTER_MILLISECONDS = 10 * 60_000;
 const HOST_WAKE_DEADLINE_MILLISECONDS = 10_000;
+const HOST_HOME_BATCH_LIMIT = 100;
+const HOST_HOME_RETRY_AFTER_MILLISECONDS = 30 * 60_000;
+const HOST_HOME_SETTLE_MILLISECONDS = 2 * 60_000;
+const HOST_HOME_REFUSE_MILLISECONDS = 5 * 60_000;
 
 const ResumeValidation = Schema.Struct({ valid: Schema.Boolean });
 const ResumeBatchValidation = Schema.Struct({ valid: Schema.Array(Schema.Boolean) });
@@ -56,6 +60,7 @@ const TelegramValidation = Schema.Struct({
 });
 const TelegramLink = Schema.Struct({ hostId: Schema.String, linkedAt: Schema.Int });
 const DiscordValidation = Schema.Struct({ guilds: Schema.Array(Schema.String) });
+const HostsHomedElsewhere = Schema.Struct({ hostIds: Schema.Array(Schema.String) });
 const WebhookValidation = Schema.Struct({ routes: Schema.Array(Schema.String) });
 const AuthEventPage = Schema.Struct({
   events: Schema.Array(Schema.Struct({ eventId: Schema.String, attemptedAt: Schema.Number, payload: Schema.String })),
@@ -104,6 +109,10 @@ class ControlPlane extends Context.Service<
     supportsRouteWake(): Effect.Effect<boolean>;
     hostWake(hostId: string): Effect.Effect<RouteWake, ControlPlaneError>;
     reconcileDiscordGuilds(guildIds: string[], before: number): Effect.Effect<void, ControlPlaneError>;
+    hostsHomedElsewhere(
+      signalId: string,
+      hostIds: readonly string[],
+    ): Effect.Effect<readonly string[] | "unsupported", ControlPlaneError>;
     authEventsAfter(
       cursor: AuthEventCursor,
       timeoutMilliseconds: number,
@@ -192,7 +201,29 @@ class ControlPlane extends Context.Service<
         batch: validateBatch,
         single: validateOne,
       });
+      let hostHomesUnsupportedUntil = 0;
       return ControlPlane.of({
+        hostsHomedElsewhere: Effect.fn("ControlPlane.hostsHomedElsewhere")((signalId, hostIds) =>
+          Date.now() < hostHomesUnsupportedUntil
+            ? Effect.succeed("unsupported" as const)
+            : Effect.acquireUseRelease(
+                ask("/v2/remote/signal-hosts/homed-elsewhere", { signal: signalId, hostIds }),
+                (response) =>
+                  Effect.gen(function* () {
+                    if (response.status === 404 || response.status === 405) {
+                      hostHomesUnsupportedUntil = Date.now() + HOST_HOME_RETRY_AFTER_MILLISECONDS;
+                      return "unsupported" as const;
+                    }
+                    if (!response.ok) return yield* unavailable();
+                    const result = yield* readJson(response).pipe(
+                      Effect.flatMap(Schema.decodeUnknownEffect(HostsHomedElsewhere)),
+                      Effect.mapError(invalidAnswer),
+                    );
+                    return result.hostIds;
+                  }),
+                releaseResponse,
+              ),
+        ),
         validateResume: Effect.fn("ControlPlane.validateResume")(
           (claims) => validateInBatch(claims),
           Effect.timeoutOrElse({
@@ -689,6 +720,41 @@ let certificateHash = await controlPlane.runPromise(tlsCertificateHash());
 let pendingReload: Promise<void> | null = null;
 let shuttingDown = false;
 const certificateTimer = setInterval(() => void reloadTlsWhenChanged(), 5 * 60_000);
+const moveHostsHomedElsewhere = Effect.fn("Signal.moveHostsHomedElsewhere")(function* (signalId: string) {
+  const settled = signal.settledHosts(
+    signalId,
+    Date.now() - Math.min(HOST_HOME_SETTLE_MILLISECONDS, config.hostHomeCheckSeconds * 1_000),
+  );
+  let moved = 0;
+  for (let start = 0; start < settled.length; start += HOST_HOME_BATCH_LIMIT) {
+    const batch = settled.slice(start, start + HOST_HOME_BATCH_LIMIT);
+    const elsewhere = yield* controlPlaneService.hostsHomedElsewhere(
+      signalId,
+      batch.map((host) => host.hostId),
+    );
+    if (elsewhere === "unsupported") return;
+    const homedElsewhere = new Set(elsewhere);
+    moved += signal.moveHostsElsewhere(
+      batch.filter((host) => homedElsewhere.has(host.hostId)),
+      Date.now() + HOST_HOME_REFUSE_MILLISECONDS,
+    );
+  }
+  if (moved > 0) console.log(`OpenBot Signal closed ${moved} host sockets that have another Signal home.`);
+});
+let pendingHostHomeCheck: Promise<void> | null = null;
+const checkHostHomes = () => {
+  const signalId = config.signalId;
+  if (!signalId || shuttingDown || handoff.state === "draining" || pendingHostHomeCheck) return;
+  pendingHostHomeCheck = controlPlane
+    .runPromise(moveHostsHomedElsewhere(signalId))
+    .catch(() => {
+      console.error("OpenBot Signal could not check the Signal homes of its hosts.");
+    })
+    .finally(() => {
+      pendingHostHomeCheck = null;
+    });
+};
+const hostHomeTimer = setInterval(checkHostHomes, config.hostHomeCheckSeconds * 1_000);
 
 function reloadTlsWhenChanged(): Promise<void> {
   if (!tlsPaths || shuttingDown || handoff.state === "draining") return Promise.resolve();
@@ -735,6 +801,7 @@ function shutdown(): Promise<void> {
   shuttingDown = true;
   pendingShutdown ??= (async () => {
     clearInterval(certificateTimer);
+    clearInterval(hostHomeTimer);
     if (snapshotTimer) clearInterval(snapshotTimer);
     handoff.close();
     healthServer.stop(true);

@@ -244,6 +244,7 @@ export interface SignalServiceOptions {
 
 class NotEntryError extends Schema.TaggedError<NotEntryError>()("NotEntryError", {}) {}
 const NOT_ENTRY_REASON = "This Signal is not the entry.";
+const HOMED_ELSEWHERE_REASON = "This host has another Signal home.";
 const HANDOFF_CLOSE_CODE = 1012;
 const HANDOFF_CLOSE_REASON = "This Signal is restarting.";
 
@@ -256,6 +257,11 @@ export interface SignalSibling {
   readonly role: "old" | "new";
   claimTicket(claims: RemoteTicketClaims): Effect.Effect<boolean, RemoteTokenUnavailableError>;
   deliverDiscord(guildId: string, delivery: DiscordDelivery): Effect.Effect<boolean>;
+}
+
+export interface SignalHostSocket {
+  hostId: string;
+  socketId: string;
 }
 
 export interface SignalSocketCounts {
@@ -420,6 +426,8 @@ export class SignalService {
   readonly #sockets = new Map<string, SignalSocket>();
   readonly #peers = new Map<string, AuthenticatedPeer>();
   readonly #hosts = new Map<string, Set<string>>();
+  readonly #hostSocketSince = new Map<string, number>();
+  readonly #hostsHomedElsewhere = new Map<string, number>();
   readonly #slackTeams = new Map<string, string>();
   readonly #slackRouteFloor = new Map<string, number>();
   readonly #telegramChats = new Map<string, string>();
@@ -675,6 +683,38 @@ export class SignalService {
     return socketId !== undefined && this.#peers.has(socketId);
   }
 
+  settledHosts(signalId: string, settledBefore: number): SignalHostSocket[] {
+    const settled: SignalHostSocket[] = [];
+    for (const hostId of this.#hostsHomedElsewhere.keys()) this.#homedElsewhere(hostId);
+    for (const hostId of this.#hosts.keys()) {
+      const host = this.#currentHost(hostId);
+      const since = host ? this.#hostSocketSince.get(host.socket.id) : undefined;
+      if (host && since !== undefined && since <= settledBefore && host.claims.signal === signalId)
+        settled.push({ hostId, socketId: host.socket.id });
+    }
+    return settled;
+  }
+
+  moveHostsElsewhere(hosts: readonly SignalHostSocket[], refuseUntil: number): number {
+    let moved = 0;
+    for (const { hostId, socketId } of hosts) {
+      if (this.#currentHost(hostId)?.socket.id !== socketId) continue;
+      this.#hostsHomedElsewhere.set(hostId, refuseUntil);
+      for (const hostSocketId of [...(this.#hosts.get(hostId) ?? [])])
+        this.#sockets.get(hostSocketId)?.close(1013, HOMED_ELSEWHERE_REASON);
+      moved += 1;
+    }
+    return moved;
+  }
+
+  #homedElsewhere(hostId: string): boolean {
+    const until = this.#hostsHomedElsewhere.get(hostId);
+    if (until === undefined) return false;
+    if (until > Date.now()) return true;
+    this.#hostsHomedElsewhere.delete(hostId);
+    return false;
+  }
+
   closeEntrySockets(): void {
     for (const peer of [...this.#peers.values()]) {
       if (!peer.claims.signal) peer.socket.close(1013, NOT_ENTRY_REASON);
@@ -828,6 +868,7 @@ export class SignalService {
   readonly disconnect = Effect.fn("Signal.disconnect")((socket: SignalSocket) =>
     Effect.gen({ self: this }, function* () {
       this.#sockets.delete(socket.id);
+      this.#hostSocketSince.delete(socket.id);
       const peer = this.#peers.get(socket.id);
       this.#clearPeerExpiration(socket.id);
       this.#clearHelloTimer(socket.id);
@@ -1882,6 +1923,10 @@ export class SignalService {
           socket.close(1013, NOT_ENTRY_REASON);
           return;
         }
+        if (message.peer === "host" && this.#homedElsewhere(authentication.success.claims.hostId)) {
+          socket.close(1013, HOMED_ELSEWHERE_REASON);
+          return;
+        }
         const { claims, slackRoute, telegramRoute, discordRoute, webhookRoute, githubRoute, resumeToken, continued } =
           authentication.success;
         const replaced = message.peer === "client" ? this.#clientForSession(claims) : null;
@@ -1998,12 +2043,14 @@ export class SignalService {
             Math.max(0, hostSockets.size - MAXIMUM_SOCKETS_PER_HOST + 1),
           )) {
             hostSockets.delete(socketId);
+            this.#hostSocketSince.delete(socketId);
             this.#peers.delete(socketId);
             this.#clearPeerExpiration(socketId);
             this.#sockets.get(socketId)?.close(1013, "Host has too many Signal connections.");
           }
           hostSockets.add(socket.id);
           this.#hosts.set(claims.hostId, hostSockets);
+          this.#hostSocketSince.set(socket.id, Date.now());
           this.#send(socket, {
             type: "ready",
             version: 1,

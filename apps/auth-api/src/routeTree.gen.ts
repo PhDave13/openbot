@@ -236,6 +236,7 @@ import { Route as V2RemoteInvitesPreviewRouteImport } from './routes/v2/remote/i
 import { Route as V2RemoteOwnerTransfersIndexRouteImport } from './routes/v2/remote/owner-transfers/index'
 import { Route as V2RemoteResumeValidateRouteImport } from './routes/v2/remote/resume/validate'
 import { Route as V2RemoteResumeValidateBatchRouteImport } from './routes/v2/remote/resume/validate-batch'
+import { Route as V2RemoteSignalHostsHomedElsewhereRouteImport } from './routes/v2/remote/signal-hosts/homed-elsewhere'
 import { Route as V2RemoteSessionsIndexRouteImport } from './routes/v2/remote/sessions/index'
 import { Route as V2RemoteSlackRouteValidateRouteImport } from './routes/v2/remote/slack-route/validate'
 import { Route as V2RemoteTelegramRouteLinkRouteImport } from './routes/v2/remote/telegram-route/link'
@@ -1463,6 +1464,12 @@ const V2RemoteSessionsIndexRoute = V2RemoteSessionsIndexRouteImport.update({
   path: '/v2/remote/sessions/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const V2RemoteSignalHostsHomedElsewhereRoute =
+  V2RemoteSignalHostsHomedElsewhereRouteImport.update({
+    id: '/v2/remote/signal-hosts/homed-elsewhere',
+    path: '/v2/remote/signal-hosts/homed-elsewhere',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const V2RemoteSlackRouteValidateRoute =
   V2RemoteSlackRouteValidateRouteImport.update({
     id: '/v2/remote/slack-route/validate',
@@ -2095,6 +2102,7 @@ export interface FileRoutesByFullPath {
   '/v2/remote/invites/preview': typeof V2RemoteInvitesPreviewRoute
   '/v2/remote/resume/validate': typeof V2RemoteResumeValidateRoute
   '/v2/remote/resume/validate-batch': typeof V2RemoteResumeValidateBatchRoute
+  '/v2/remote/signal-hosts/homed-elsewhere': typeof V2RemoteSignalHostsHomedElsewhereRoute
   '/v2/remote/slack-route/validate': typeof V2RemoteSlackRouteValidateRoute
   '/v2/remote/telegram-route/link': typeof V2RemoteTelegramRouteLinkRoute
   '/v2/remote/telegram-route/validate': typeof V2RemoteTelegramRouteValidateRoute
@@ -2391,6 +2399,7 @@ export interface FileRoutesByTo {
   '/v2/remote/invites/preview': typeof V2RemoteInvitesPreviewRoute
   '/v2/remote/resume/validate': typeof V2RemoteResumeValidateRoute
   '/v2/remote/resume/validate-batch': typeof V2RemoteResumeValidateBatchRoute
+  '/v2/remote/signal-hosts/homed-elsewhere': typeof V2RemoteSignalHostsHomedElsewhereRoute
   '/v2/remote/slack-route/validate': typeof V2RemoteSlackRouteValidateRoute
   '/v2/remote/telegram-route/link': typeof V2RemoteTelegramRouteLinkRoute
   '/v2/remote/telegram-route/validate': typeof V2RemoteTelegramRouteValidateRoute
@@ -2692,6 +2701,7 @@ export interface FileRoutesById {
   '/v2/remote/invites/preview': typeof V2RemoteInvitesPreviewRoute
   '/v2/remote/resume/validate': typeof V2RemoteResumeValidateRoute
   '/v2/remote/resume/validate-batch': typeof V2RemoteResumeValidateBatchRoute
+  '/v2/remote/signal-hosts/homed-elsewhere': typeof V2RemoteSignalHostsHomedElsewhereRoute
   '/v2/remote/slack-route/validate': typeof V2RemoteSlackRouteValidateRoute
   '/v2/remote/telegram-route/link': typeof V2RemoteTelegramRouteLinkRoute
   '/v2/remote/telegram-route/validate': typeof V2RemoteTelegramRouteValidateRoute
@@ -2990,6 +3000,7 @@ export interface FileRouteTypes {
     | '/v2/remote/invites/preview'
     | '/v2/remote/resume/validate'
     | '/v2/remote/resume/validate-batch'
+    | '/v2/remote/signal-hosts/homed-elsewhere'
     | '/v2/remote/slack-route/validate'
     | '/v2/remote/telegram-route/link'
     | '/v2/remote/telegram-route/validate'
@@ -3286,6 +3297,7 @@ export interface FileRouteTypes {
     | '/v2/remote/invites/preview'
     | '/v2/remote/resume/validate'
     | '/v2/remote/resume/validate-batch'
+    | '/v2/remote/signal-hosts/homed-elsewhere'
     | '/v2/remote/slack-route/validate'
     | '/v2/remote/telegram-route/link'
     | '/v2/remote/telegram-route/validate'
@@ -3586,6 +3598,7 @@ export interface FileRouteTypes {
     | '/v2/remote/invites/preview'
     | '/v2/remote/resume/validate'
     | '/v2/remote/resume/validate-batch'
+    | '/v2/remote/signal-hosts/homed-elsewhere'
     | '/v2/remote/slack-route/validate'
     | '/v2/remote/telegram-route/link'
     | '/v2/remote/telegram-route/validate'
@@ -3801,6 +3814,7 @@ export interface RootRouteChildren {
   V2RemoteInvitesPreviewRoute: typeof V2RemoteInvitesPreviewRoute
   V2RemoteResumeValidateRoute: typeof V2RemoteResumeValidateRoute
   V2RemoteResumeValidateBatchRoute: typeof V2RemoteResumeValidateBatchRoute
+  V2RemoteSignalHostsHomedElsewhereRoute: typeof V2RemoteSignalHostsHomedElsewhereRoute
   V2RemoteSlackRouteValidateRoute: typeof V2RemoteSlackRouteValidateRoute
   V2RemoteTelegramRouteLinkRoute: typeof V2RemoteTelegramRouteLinkRoute
   V2RemoteTelegramRouteValidateRoute: typeof V2RemoteTelegramRouteValidateRoute
@@ -5463,6 +5477,13 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof V2RemoteResumeValidateBatchRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/v2/remote/signal-hosts/homed-elsewhere': {
+      id: '/v2/remote/signal-hosts/homed-elsewhere'
+      path: '/v2/remote/signal-hosts/homed-elsewhere'
+      fullPath: '/v2/remote/signal-hosts/homed-elsewhere'
+      preLoaderRoute: typeof V2RemoteSignalHostsHomedElsewhereRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/v2/remote/sessions/': {
       id: '/v2/remote/sessions/'
       path: '/v2/remote/sessions'
@@ -6430,6 +6451,7 @@ const rootRouteChildren: RootRouteChildren = {
   V2RemoteInvitesPreviewRoute: V2RemoteInvitesPreviewRoute,
   V2RemoteResumeValidateRoute: V2RemoteResumeValidateRoute,
   V2RemoteResumeValidateBatchRoute: V2RemoteResumeValidateBatchRoute,
+  V2RemoteSignalHostsHomedElsewhereRoute: V2RemoteSignalHostsHomedElsewhereRoute,
   V2RemoteSlackRouteValidateRoute: V2RemoteSlackRouteValidateRoute,
   V2RemoteTelegramRouteLinkRoute: V2RemoteTelegramRouteLinkRoute,
   V2RemoteTelegramRouteValidateRoute: V2RemoteTelegramRouteValidateRoute,

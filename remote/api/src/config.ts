@@ -34,6 +34,7 @@ export interface RemoteApiConfig {
   handoffToken: string | null;
   drainSeconds: number;
   snapshotSeconds: number;
+  hostHomeCheckSeconds: number;
 }
 
 export interface SignalEntryConfig {
@@ -186,6 +187,7 @@ export function readRemoteApiConfig(environment: Record<string, string | undefin
     handoffToken: readHandoffToken(environment.REMOTE_HANDOFF_TOKEN, environment.REMOTE_METRICS_TOKEN),
     drainSeconds: positiveInteger(environment.REMOTE_DRAIN_SECONDS, 90),
     snapshotSeconds: positiveInteger(environment.REMOTE_STATE_SNAPSHOT_SECONDS, 30),
+    hostHomeCheckSeconds: positiveInteger(environment.REMOTE_HOST_HOME_CHECK_SECONDS, 300),
   };
 }
 

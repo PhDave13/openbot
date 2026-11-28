@@ -137,6 +137,21 @@ While the ticket is still valid (`TICKET_TTL_SECONDS`, 180 s), a second use is p
 restart. Before this change every used ticket was forgotten at a restart. A planned handoff has no
 such gap, because the claim is live.
 
+## Home check
+
+The account service writes the new home of a host to D1 (`remote_hosts.signal_home`) before the host
+gets the answer. When the answer is lost, the host stays on its old home and clients go to the new
+one, so the host is online but no client reaches it.
+
+Every `REMOTE_HOST_HOME_CHECK_SECONDS` (300 s) each home sends the host IDs of its settled host
+sockets (registered at least 2 minutes before, ticket of this home) to
+`POST /v2/remote/signal-hosts/homed-elsewhere`, in batches of 100. The account service returns the
+hosts whose stored home is another configured home. It writes nothing. Signal closes these sockets
+with 1013 "This host has another Signal home." and refuses their host hellos for 5 minutes. After
+20 s not ready, a host of any released version asks for a new ticket and names the failed home, so
+it gets its stored home. An account service with no route (404 or 405) stops the check for
+30 minutes. Deploy the account service first.
+
 ## Webhooks and Discord
 
 During a handoff, a webhook can reach either process. When the ingress socket of the host is on the

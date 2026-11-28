@@ -703,6 +703,40 @@ async function invalidCountriesFailClosed() {
   );
 }
 
+async function aSignalLearnsWhichHostsHaveAnotherHome() {
+  const database = await hostsWithSessions(["host-here", "host-moved", "host-entry", "host-retired"]);
+  const remote = plane(database, HOMES);
+  const setHome = (hostId: string, home: string | null) =>
+    database.prepare("UPDATE remote_hosts SET signal_home = ? WHERE host_id = ?").run(home, hostId);
+  setHome("host-here", "a");
+  setHome("host-moved", "b");
+  setHome("host-entry", null);
+  setHome("host-retired", "old");
+  const reported = ["host-here", "host-moved", "host-entry", "host-retired", "host-unknown", "host-moved"];
+  const fromA = await Effect.runPromise(remote.signalHostsHomedElsewhere("a", reported));
+  check(
+    "Signal a learns that only the host with the stored home b has another home",
+    JSON.stringify(fromA) === JSON.stringify(["host-moved"]),
+    { fromA },
+  );
+  const fromB = await Effect.runPromise(remote.signalHostsHomedElsewhere("b", reported));
+  check(
+    "Signal b learns that the host with the stored home a has another home",
+    JSON.stringify(fromB) === JSON.stringify(["host-here"]),
+    { fromB },
+  );
+  const fromUnknown = await Effect.runPromise(remote.signalHostsHomedElsewhere("zz", reported));
+  check("a Signal that is not a configured home learns no host", fromUnknown.length === 0, { fromUnknown });
+  const stored = reported.slice(0, 4).map((hostId) => storedHome(database, hostId));
+  check(
+    "the check does not change a stored home",
+    JSON.stringify(stored) === JSON.stringify(["a", "b", "none", "old"]),
+    { stored },
+  );
+  const withoutHomes = await Effect.runPromise(plane(database, "").signalHostsHomedElsewhere("a", reported));
+  check("with no home list, no Signal learns a host", withoutHomes.length === 0, { withoutHomes });
+}
+
 const scenarios = [
   aHostGetsKeepsAndMovesItsHome,
   noHomesKeepsTheEntrySignal,
@@ -714,6 +748,7 @@ const scenarios = [
   invalidLocationsFailClosed,
   hostsInAListedCountryGetItsHomes,
   invalidCountriesFailClosed,
+  aSignalLearnsWhichHostsHaveAnotherHome,
 ];
 for (const scenario of scenarios) {
   try {

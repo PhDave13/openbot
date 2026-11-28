@@ -386,6 +386,7 @@ export type RemoteResumeClaims = Pick<
 >;
 
 export const REMOTE_RESUME_BATCH_LIMIT = 100;
+export const REMOTE_SIGNAL_HOSTS_BATCH_LIMIT = 100;
 
 interface IngressRouteError {
   error: string;
@@ -3008,6 +3009,30 @@ export class RemoteControlPlane {
         if (claims.role === "host") return hostResumeClaimsMatch(claims, hosts.get(claims.hostId));
         return sessionResumeClaimsMatch(claims, sessions.get(claims.sessionId), now);
       });
+    },
+    (operation) => operation.pipe(Effect.provide(this.#layer)),
+  ).bind(this);
+
+  readonly signalHostsHomedElsewhere = Effect.fn("RemoteControlPlane.signalHostsHomedElsewhere")(
+    function* (
+      this: RemoteControlPlane,
+      signalId: string,
+      hostIds: readonly string[],
+    ): Effect.fn.Return<string[], RemoteFailure, RemoteDependencies> {
+      const dependencies = yield* RemoteDependencies;
+      const signal = dependencies.signal;
+      if (!signal) return yield* remoteSignalNotConfigured();
+      if (!configuredSignalHome(signal, signalId) || hostIds.length === 0) return [];
+      const rows = yield* remoteCall(() =>
+        dependencies.database
+          .prepare(
+            `SELECT host_id, signal_home FROM remote_hosts
+              WHERE host_id IN (SELECT value FROM json_each(?)) AND signal_home IS NOT NULL AND signal_home <> ?`,
+          )
+          .bind(JSON.stringify([...new Set(hostIds)]), signalId)
+          .all<{ host_id: string; signal_home: string }>(),
+      );
+      return rows.results.filter((row) => configuredSignalHome(signal, row.signal_home)).map((row) => row.host_id);
     },
     (operation) => operation.pipe(Effect.provide(this.#layer)),
   ).bind(this);
