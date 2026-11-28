@@ -1,10 +1,10 @@
 {
-  "version": "1.4.14",
+  "version": "1.4.15",
   "highlights": [
-    "Hide a server from your server list. It stays hidden on all your devices.",
-    "Make a one-time routine: in \"When to run\", select \"Once\".",
-    "New option: use the full-screen camera, with zoom and all lenses.",
-    "Home has larger avatars and shorter rows, so you see more chats.",
-    "Better connection: the app connects again by itself after a network change, and sent messages no longer disappear."
+    "Chats open faster, and long chats scroll and stream more smoothly.",
+    "Agents, channels and the newest messages now stay up to date by themselves.",
+    "Change the provider or model of an agent while it works: it uses the new choice from its next turn.",
+    "New privacy setting: \"Load remote content in chats\", in Server Settings > Agents.",
+    "On Android, dictation now continues until you tap Stop."
   ]
 }
