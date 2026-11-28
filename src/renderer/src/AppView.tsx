@@ -55,10 +55,13 @@ export function AppAccessGate() {
   const updateRequired = () => updates.status().requiredVersion !== undefined && !requiredUpdateDismissed();
   const languageLoaded = createMemo<boolean>((was) => was === true || i18n.ready());
   const started = () => setup.setupLoaded() && platform.appInfo() !== null && languageLoaded();
-  const [splashShown, setSplashShown] = createSignal(!platform.landingPreview && !startsAfterRestart());
+  const splashShownAtMount = !platform.landingPreview && !startsAfterRestart();
+  if (!splashShownAtMount) startupSplashPlayed = true;
+  const [splashShown, setSplashShown] = createSignal(splashShownAtMount);
   const splashExit = () => {
     if (platform.chatWindow !== null) return undefined;
-    return !startupSplashPlayed && setup.setupState()?.completed !== true ? "playToEnd" : "fade";
+    if (startupSplashPlayed) return "fade";
+    return setup.setupState()?.completed === true ? "holdThenFade" : "playToEnd";
   };
   const [splashOpen, setSplashOpen] = createSignal(false);
   const splashMoving = () => splashShown() && !splashOpen();

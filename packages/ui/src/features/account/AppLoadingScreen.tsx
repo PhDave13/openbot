@@ -115,7 +115,7 @@ export interface AppLoadingScreenProps {
   seed?: number;
   label?: string;
   title?: string;
-  exit?: "playToEnd" | "fade" | undefined;
+  exit?: "playToEnd" | "holdThenFade" | "fade" | undefined;
   immediate?: boolean;
 }
 
@@ -176,9 +176,9 @@ export function AppLoadingScreen(props: AppLoadingScreenProps) {
       if (!ready || untrack(phase) !== "loading" || exitWanted) return;
       clearTimeout(statusTimer);
       if (exit === "playToEnd") seat?.playToEnd();
-      const quick = exit === "fade" || (!seat?.playThrough() && age() < QUICK_EXIT_S);
+      const quick = exit === "fade" || exit === "holdThenFade" || (!seat?.playThrough() && age() < QUICK_EXIT_S);
       const hopOut = seat && !reducedMotion && seat.owns() && seat.alone() && !quick;
-      const holdS = hopOut ? MIN_RAIN_S - age() : exit === "fade" ? MIN_SHOWN_S - shownFor() : 0;
+      const holdS = hopOut ? MIN_RAIN_S - age() : exit === "holdThenFade" ? MIN_SHOWN_S - shownFor() : 0;
       const holdLeft = Math.max(0, holdS) * 1000;
       exitTimer ??= setTimeout(finishExit, holdLeft + EXIT_LIMIT_MS);
       if (seat && !hopOut && !seat.alone()) seat.handOver();
